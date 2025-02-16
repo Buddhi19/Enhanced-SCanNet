@@ -1,0 +1,6 @@
+*.png
+checkpoints/
+datasets/
+logs/
+models/
+pycache/

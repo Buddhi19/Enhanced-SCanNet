@@ -7,6 +7,8 @@ import utils.transform as transform
 import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
+torch.cuda.set_device(0)
+
 num_classes = 7
 ST_COLORMAP = [[255,255,255], [0,0,255], [128,128,128], [0,128,0], [0,255,0], [128,0,0], [255,0,0]]
 ST_CLASSES = ['unchanged', 'water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
@@ -16,7 +18,8 @@ STD_A  = np.array([48.30,  46.27,  48.14])
 MEAN_B = np.array([111.07, 114.04, 118.18])
 STD_B  = np.array([49.41,  47.01,  47.94])
 
-root = '../SECOND/'
+MAIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root = os.path.join(MAIN_DIR, 'SECOND')
 
 colormap2label = np.zeros(256 ** 3)
 for i, cm in enumerate(ST_COLORMAP):

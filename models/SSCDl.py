@@ -5,6 +5,8 @@ from torchvision import models
 from torch.nn import functional as F
 from utils.misc import initialize_weights
 
+torch.cuda.set_device(1)
+
 def conv1x1(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 

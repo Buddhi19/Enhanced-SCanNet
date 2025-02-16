@@ -112,6 +112,7 @@ def main():
     print('Training finished.')
 
 def train(train_loader, net, criterion, optimizer, val_loader):
+    torch.cuda.set_device(1)
     net_psd = None
     conf_thred = AverageThred(RS.num_classes)
                       
@@ -362,4 +363,5 @@ def adjust_lr(optimizer, iter_ratio, init_lr=args['lr']):
 
 
 if __name__ == '__main__':
+    torch.cuda.set_device(1)
     main()
