@@ -1,6 +1,10 @@
 *.png
 checkpoints/
 datasets/
+*.mat
 logs/
 models/
 pycache/
+__pycache__
+*.mat
+*.pyc

@@ -28,8 +28,8 @@ DATA_NAME = 'ST'
 # Training options
 ###############################################
 args = {
-    'train_batch_size': 8,
-    'val_batch_size': 8,
+    'train_batch_size': 6,
+    'val_batch_size': 6,
     'lr': 0.1,
     'gpu': True,
     'epochs': 50,
@@ -100,7 +100,7 @@ def main():
 
     train_set = RS.Data('train', random_flip=True, random_swap=False)
     train_loader = DataLoader(train_set, batch_size=args['train_batch_size'], shuffle=True)
-    val_set = RS.Data('val')
+    val_set = RS.Data('test')
     val_loader = DataLoader(val_set, batch_size=args['val_batch_size'], shuffle=False)
 
     criterion = CrossEntropyLoss2d(ignore_index=0).cuda()
@@ -112,7 +112,7 @@ def main():
     print('Training finished.')
 
 def train(train_loader, net, criterion, optimizer, val_loader):
-    torch.cuda.set_device(1)
+    # torch.cuda.set_device(1)
     net_psd = None
     conf_thred = AverageThred(RS.num_classes)
                       
@@ -327,6 +327,41 @@ def validate(val_loader, net, criterion, curr_epoch):
         if curr_epoch % args['predict_step'] == 0 and vi == 0:
             pred_A_color = RS.Index2Color(preds_A[0])
             pred_B_color = RS.Index2Color(preds_B[0])
+
+            ############################################################################################
+            label_A_color = RS.Index2Color(labels_A[0])
+            label_B_color = RS.Index2Color(labels_B[0])
+
+            str_curr_epoch = str(curr_epoch)
+
+            pred_dir_epoch = os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch)
+            if not os.path.exists(pred_dir_epoch):
+                os.makedirs(pred_dir_epoch)
+
+            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_A.png'), recon_A[0].cpu().detach().numpy().transpose(1, 2, 0))
+            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_B.png'), recon_B[0].cpu().detach().numpy().transpose(1, 2, 0))
+            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x1_noisy.png'), x1_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
+            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x2_noisy.png'), x2_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
+
+            import scipy.io as sio
+
+            data_to_save = {
+                # 'recon_A': recon_A[0].cpu().detach().numpy(),
+                # 'recon_B': recon_B[0].cpu().detach().numpy(),
+                # 'x1_noisy': x1_noisy[0].cpu().detach().numpy(),
+                # 'x2_noisy': x2_noisy[0].cpu().detach().numpy(),
+                'label_A': label_A_color,
+                'label_B' : label_B_color,
+                'pred_A' : pred_A_color,
+                'pred_B' : pred_B_color
+            }
+
+            sio.savemat(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_data.mat'), data_to_save)
+
+            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_A.png'), (label_A_color*255).astype(np.uint8))
+            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_B.png'), (label_B_color*255).astype(np.uint8))
+            ############################################################################################
+
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_A.png'), pred_A_color)
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_B.png'), pred_B_color)
             print('Prediction saved!')

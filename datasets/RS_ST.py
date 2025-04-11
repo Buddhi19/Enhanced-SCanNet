@@ -7,7 +7,7 @@ import utils.transform as transform
 import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
-torch.cuda.set_device(0)
+# torch.cuda.set_device(1)
 
 num_classes = 7
 ST_COLORMAP = [[255,255,255], [0,0,255], [128,128,128], [0,128,0], [0,255,0], [128,0,0], [255,0,0]]
@@ -18,8 +18,8 @@ STD_A  = np.array([48.30,  46.27,  48.14])
 MEAN_B = np.array([111.07, 114.04, 118.18])
 STD_B  = np.array([49.41,  47.01,  47.94])
 
-MAIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-root = os.path.join(MAIN_DIR, 'SECOND')
+MAIN_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+root = os.path.join(MAIN_DIR, 'Datasets', 'SECOND')
 
 colormap2label = np.zeros(256 ** 3)
 for i, cm in enumerate(ST_COLORMAP):
@@ -73,10 +73,10 @@ def normalize_images(imgs, time='A'):
 
 def read_RSimages(mode):
     #assert mode in ['train', 'val', 'test']
-    img_A_dir = os.path.join(root, mode, 'im1')
-    img_B_dir = os.path.join(root, mode, 'im2')
-    label_A_dir = os.path.join(root, mode, 'label1')
-    label_B_dir = os.path.join(root, mode, 'label2')
+    img_A_dir = os.path.join(root, mode, 'T1')
+    img_B_dir = os.path.join(root, mode, 'T2')
+    label_A_dir = os.path.join(root, mode, 'GT_T1_COLORED')
+    label_B_dir = os.path.join(root, mode, 'GT_T2_COLORED')
     #label_A_dir = os.path.join(root, mode, 'label1_rgb')
     #label_B_dir = os.path.join(root, mode, 'label2_rgb')
     
@@ -140,8 +140,8 @@ class Data_test(data.Dataset):
         self.imgs_A = []
         self.imgs_B = []
         self.mask_name_list = []
-        imgA_dir = os.path.join(test_dir, 'im1')
-        imgB_dir = os.path.join(test_dir, 'im2')
+        imgA_dir = os.path.join(test_dir, 'T1')
+        imgB_dir = os.path.join(test_dir, 'T2')
         data_list = os.listdir(imgA_dir)
         for it in data_list:
             if (it[-4:]=='.png'):
