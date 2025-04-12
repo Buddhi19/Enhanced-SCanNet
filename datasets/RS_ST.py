@@ -7,8 +7,6 @@ import utils.transform as transform
 import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
-# torch.cuda.set_device(1)
-
 num_classes = 7
 ST_COLORMAP = [[255,255,255], [0,0,255], [128,128,128], [0,128,0], [0,255,0], [128,0,0], [255,0,0]]
 ST_CLASSES = ['unchanged', 'water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
@@ -75,8 +73,8 @@ def read_RSimages(mode):
     #assert mode in ['train', 'val', 'test']
     img_A_dir = os.path.join(root, mode, 'T1')
     img_B_dir = os.path.join(root, mode, 'T2')
-    label_A_dir = os.path.join(root, mode, 'GT_T1_COLORED')
-    label_B_dir = os.path.join(root, mode, 'GT_T2_COLORED')
+    label_A_dir = os.path.join(root, mode, 'GT_T1')
+    label_B_dir = os.path.join(root, mode, 'GT_T2')
     #label_A_dir = os.path.join(root, mode, 'label1_rgb')
     #label_B_dir = os.path.join(root, mode, 'label2_rgb')
     

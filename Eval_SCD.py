@@ -44,10 +44,10 @@ def cal_kappa(hist):
 def Eval():
     IMAGE_FORMAT = '.png'
     
-    INFER_DIR1 = '../SECOND/val/im1/'  # Inference path1
-    INFER_DIR2 = '../SECOND/val/im2/'  # Inference path2
-    LABEL_DIR1 = '../SECOND/val/label1/'  # GroundTruth path
-    LABEL_DIR2 = '../SECOND/val/label2/'  # GroundTruth path
+    INFER_DIR1 = '/PATH_TO_PRED/im1/'  # Inference path1
+    INFER_DIR2 = '/PATH_TO_PRED/im2/'  # Inference path2
+    LABEL_DIR1 = '/PATH_TO_GT/label1/'  # GroundTruth path
+    LABEL_DIR2 = '/PATH_TO_GT/label2/'  # GroundTruth path
 
     infer_list1 = glob.glob(INFER_DIR1 + "*{}".format(IMAGE_FORMAT))
     infer_list2 = glob.glob(INFER_DIR2 + "*{}".format(IMAGE_FORMAT))
@@ -83,7 +83,6 @@ def Eval():
             sys.exit(0)
         infer_array = np.array(infer)
         unique_set = set(np.unique(infer_array))
-        print(unique_set)
         assert unique_set.issubset(set([0, 1, 2, 3, 4, 5, 6])), "unrecognized label number"
         label_array = np.array(label)
         assert infer_array.shape == label_array.shape, "The size of prediction and target must be the same"

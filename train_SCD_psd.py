@@ -38,7 +38,7 @@ args = {
     'psd_TTA': True,
     'vis_psd': True,
     'psd_init_Fscd': 0.6,
-    'print_freq': 50,
+    'print_freq': 10,
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
@@ -112,7 +112,6 @@ def main():
     print('Training finished.')
 
 def train(train_loader, net, criterion, optimizer, val_loader):
-    # torch.cuda.set_device(1)
     net_psd = None
     conf_thred = AverageThred(RS.num_classes)
                       
@@ -213,13 +212,7 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                     psdB_color = RS.Index2Color(labels_B[0].cpu().detach().numpy())
                     io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
                     io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
-
-            labels_A = torch.argmax(labels_A, dim=3).long()  
-            labels_B = torch.argmax(labels_B, dim=3).long() 
-            
-            labels_bn = torch.argmax(labels_bn, dim=-1).unsqueeze(1).float()
-            # print(f"out_change: {out_change.shape}, labels_bn: {labels_bn.shape}")
-
+                    
             loss_seg = criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B)
             loss_bn = weighted_BCE_logits(out_change, labels_bn)
             loss_sc = criterion_sc(outputs_A[:, 1:], outputs_B[:, 1:], labels_bn)
@@ -296,10 +289,6 @@ def validate(val_loader, net, criterion, curr_epoch):
 
         with torch.no_grad():
             out_change, outputs_A, outputs_B = net(imgs_A, imgs_B)
-
-            labels_A = torch.argmax(labels_A, dim=3).long()
-            labels_B = torch.argmax(labels_B, dim=3).long()
-
             loss_A = criterion(outputs_A, labels_A)
             loss_B = criterion(outputs_B, labels_B)
             loss = loss_A * 0.5 + loss_B * 0.5
@@ -327,41 +316,6 @@ def validate(val_loader, net, criterion, curr_epoch):
         if curr_epoch % args['predict_step'] == 0 and vi == 0:
             pred_A_color = RS.Index2Color(preds_A[0])
             pred_B_color = RS.Index2Color(preds_B[0])
-
-            ############################################################################################
-            label_A_color = RS.Index2Color(labels_A[0])
-            label_B_color = RS.Index2Color(labels_B[0])
-
-            str_curr_epoch = str(curr_epoch)
-
-            pred_dir_epoch = os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch)
-            if not os.path.exists(pred_dir_epoch):
-                os.makedirs(pred_dir_epoch)
-
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_A.png'), recon_A[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_B.png'), recon_B[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x1_noisy.png'), x1_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x2_noisy.png'), x2_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
-
-            import scipy.io as sio
-
-            data_to_save = {
-                # 'recon_A': recon_A[0].cpu().detach().numpy(),
-                # 'recon_B': recon_B[0].cpu().detach().numpy(),
-                # 'x1_noisy': x1_noisy[0].cpu().detach().numpy(),
-                # 'x2_noisy': x2_noisy[0].cpu().detach().numpy(),
-                'label_A': label_A_color,
-                'label_B' : label_B_color,
-                'pred_A' : pred_A_color,
-                'pred_B' : pred_B_color
-            }
-
-            sio.savemat(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_data.mat'), data_to_save)
-
-            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_A.png'), (label_A_color*255).astype(np.uint8))
-            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_B.png'), (label_B_color*255).astype(np.uint8))
-            ############################################################################################
-
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_A.png'), pred_A_color)
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_B.png'), pred_B_color)
             print('Prediction saved!')

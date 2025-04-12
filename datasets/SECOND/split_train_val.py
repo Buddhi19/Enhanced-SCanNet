@@ -1,23 +1,16 @@
 import os
 from shutil import copyfile
-import torch
-import sys
-
-torch.cuda.set_device(1)
-
-MAIN_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-print(MAIN_DIR)
 
 def main():
-    src_dir = os.path.join(MAIN_DIR,'datasets', 'SECOND', 'original_train_dir_in_the_SECOND')
-    train_dir = os.path.join(MAIN_DIR,'datasets', 'SECOND', 'train')
-    val_dir = os.path.join(MAIN_DIR,'datasets', 'SECOND', 'val')
+    src_dir = '/original_train_dir_in_the_SECOND/'
+    train_dir = '/train_dir_after_split/'
+    val_dir = '/val_dir_after_split/'
 
     train_info = open('train_info.txt', 'r')
     train_list = train_info.readlines()
     val_info = open('val_info.txt', 'r')
     val_list = val_info.readlines()
-    dir_names = ['im1', 'im2', 'label1', 'label2']
+    dir_names = ['im1', 'im2', 'label1', 'label2', 'label1_rgb', 'label2_rgb']
 
     count = 0
     for it in train_list:
@@ -45,5 +38,4 @@ def main():
 
 
 if __name__ == '__main__':
-    torch.cuda.set_device(1)
     main()

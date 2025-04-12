@@ -179,4 +179,4 @@ class SCanNet(nn.Module):
         out2 = self.classifierB(x2)
         change = self.classifierCD(xc)
         
-        return F.upsample(change, x_size[2:], mode='bilinear'), F.upsample(out1, x_size[2:], mode='bilinear'), F.upsample(out2, x_size[2:], mode='bilinear')
+        return F.interpolate(change, x_size[2:], mode='bilinear'), F.interpolate(out1, x_size[2:], mode='bilinear'), F.interpolate(out2, x_size[2:], mode='bilinear')
