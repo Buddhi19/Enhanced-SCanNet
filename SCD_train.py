@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 
 working_path = os.path.dirname(os.path.abspath(__file__))
 
-from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity
+from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss
+from utils.lovasz_losses import lovasz_softmax, lovasz_hinge
 from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 
 # Data and model choose
@@ -22,23 +23,23 @@ from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 from datasets import RS_ST as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'SCanNet_psd'
+NET_NAME = 'SCanNet_psd_2'
 DATA_NAME = 'ST'
 ###############################################
 # Training options
 ###############################################
 args = {
-    'train_batch_size': 6,
-    'val_batch_size': 6,
+    'train_batch_size': 8,
+    'val_batch_size': 8,
     'lr': 0.1,
     'gpu': True,
-    'epochs': 50,
+    'epochs': 100,
     'lr_decay_power': 1.5,
     'psd_train': True,
     'psd_TTA': True,
     'vis_psd': True,
     'psd_init_Fscd': 0.6,
-    'print_freq': 10,
+    'print_freq': 50,
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
@@ -118,6 +119,7 @@ def train(train_loader, net, criterion, optimizer, val_loader):
     bestaccT = 0
     bestFscdV = 0.0
     bestloss = 1.0
+    best_Sek = 0.0
     bestaccV = 0.0
     begin_time = time.time()
     all_iters = float(len(train_loader) * args['epochs'])
@@ -212,9 +214,26 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                     psdB_color = RS.Index2Color(labels_B[0].cpu().detach().numpy())
                     io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
                     io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
-                    
-            loss_seg = criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B)
-            loss_bn = weighted_BCE_logits(out_change, labels_bn)
+
+            ce_loss_A = criterion(outputs_A, labels_A)
+            ce_loss_B = criterion(outputs_B, labels_B)
+
+            lovasz_loss_A = lovasz_softmax(outputs_A, labels_A, per_image=True)
+            lovasz_loss_B = lovasz_softmax(outputs_B, labels_B, per_image=True)
+
+            loss_seg = 0.5 * (ce_loss_A + ce_loss_B) + 0.5 * (lovasz_loss_A + lovasz_loss_B) + criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B)
+
+
+           # Ensure binary labels are float
+            labels_bn_float = labels_bn.float()
+
+            # Binary change detection loss
+            bce_loss = F.binary_cross_entropy_with_logits(out_change, labels_bn_float)
+            dice = dice_loss(out_change, labels_bn_float)
+            lovasz = lovasz_hinge(out_change.squeeze(1), labels_bn_float.squeeze(1))
+
+            loss_bn = 0.5 * bce_loss + 0.3 * dice + 0.2 * lovasz
+
             loss_sc = criterion_sc(outputs_A[:, 1:], outputs_B[:, 1:], labels_bn)
                                   
             loss = loss_seg*0.5 + loss_bn + loss_sc
@@ -254,9 +273,16 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                     train_seg_loss.val, train_bn_loss.val, acc_meter.val * 100))  # sc_loss %.4f, train_sc_loss.val, 
 
         Fscd_v, mIoU_v, Sek_v, acc_v, loss_v = validate(val_loader, net, criterion, curr_epoch)
+
+        writer.add_scalar('test Fscd', Fscd_v*100, curr_epoch)
+        writer.add_scalar('test IoU', mIoU_v*100, curr_epoch)
+        writer.add_scalar('test Sek', Sek_v*100, curr_epoch)
+        writer.add_scalar('test accuracy', acc_v*100, curr_epoch)
+
         if acc_meter.avg > bestaccT: bestaccT = acc_meter.avg
-        if Fscd_v>bestFscdV:
+        if Sek_v>best_Sek:
             bestFscdV=Fscd_v
+            best_Sek=Sek_v
             bestaccV=acc_v
             bestloss=loss_v
             net_psd = copy.deepcopy(net)
@@ -352,5 +378,5 @@ def adjust_lr(optimizer, iter_ratio, init_lr=args['lr']):
 
 
 if __name__ == '__main__':
-    torch.cuda.set_device(1)
+    torch.cuda.set_device(0)
     main()

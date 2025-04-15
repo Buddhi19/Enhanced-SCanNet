@@ -257,3 +257,14 @@ class DiceLoss(nn.Module):
                 total_loss += dice_loss
 
         return total_loss/target.shape[1]
+
+def dice_loss(pred, target, smooth=1.0):
+    pred = torch.sigmoid(pred)  # ensure it's in [0, 1]
+    pred = pred.contiguous()
+    target = target.contiguous()
+
+    intersection = (pred * target).sum(dim=(2, 3))
+    union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
+    
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return 1 - dice.mean()

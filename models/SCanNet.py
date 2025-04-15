@@ -4,6 +4,7 @@ from torchvision import models
 from torch.nn import functional as F
 from utils.misc import initialize_weights
 from models.CSWin_Transformer import mit
+from models.GuidedFusion import PyramidFusion, ASPP
 
 args = {'hidden_size': 128*3,
         'mlp_dim': 256*3,
@@ -20,20 +21,40 @@ def conv3x3(in_planes, out_planes, stride=1):
 class _DecoderBlock(nn.Module):
     def __init__(self, in_channels_high, in_channels_low, out_channels, scale_ratio=1):
         super(_DecoderBlock, self).__init__()
+        self.scale_ratio = scale_ratio
+        
+        # Upsample high-level features
         self.up = nn.ConvTranspose2d(in_channels_high, in_channels_high, kernel_size=2, stride=2)
-        in_channels = in_channels_high + in_channels_low//scale_ratio
+        
+        # Transit block reduces channels of low_feat
         self.transit = nn.Sequential(
-            conv1x1(in_channels_low, in_channels_low//scale_ratio),
-            nn.BatchNorm2d(in_channels_low//scale_ratio),
-            nn.ReLU(inplace=True) )
+            conv1x1(in_channels_low, in_channels_low // scale_ratio),
+            nn.BatchNorm2d(in_channels_low // scale_ratio),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Attention modules on low_feat after transit
+        reduced_channels = in_channels_low // scale_ratio
+        self.ca = ChannelAttention(reduced_channels)
+        self.sa = SpatialAttention()
+
+        # Decoder combines upsampled high-level and attended low-level features
+        in_channels = in_channels_high + reduced_channels
         self.decode = nn.Sequential(
             conv3x3(in_channels, out_channels),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True) )
+            nn.ReLU(inplace=True)
+        )
 
     def forward(self, x, low_feat):
-        x = self.up(x)
-        low_feat = self.transit(low_feat)
+        x = self.up(x)  # shape: [B, C, 128, 128]
+        low_feat = self.transit(low_feat)  # shape: [B, C', 128, 128]
+
+        # Apply attention
+        low_feat = low_feat * self.ca(low_feat)
+        low_feat = low_feat * self.sa(low_feat)
+
+        # Concatenate and decode
         x = torch.cat((x, low_feat), dim=1)
         x = self.decode(x)
         return x
@@ -107,6 +128,48 @@ class ResBlock(nn.Module):
 
         return out
 
+class ChannelAttention(nn.Module):
+    def __init__(self, in_channels, reduction=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)  # Global avg pooling
+        self.max_pool = nn.AdaptiveMaxPool2d(1)  # Global max pooling
+        
+        self.fc = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels // reduction, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels // reduction, in_channels, 1, bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = self.fc(self.avg_pool(x))
+        max_out = self.fc(self.max_pool(x))
+        return self.sigmoid(avg_out + max_out)
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)  # (B,1,H,W)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)  # (B,1,H,W)
+        x_cat = torch.cat([avg_out, max_out], dim=1)
+        return self.sigmoid(self.conv(x_cat))
+
+class AttentionFusion(nn.Module):
+    def __init__(self, in_channels):
+        super(AttentionFusion, self).__init__()
+        self.ca = ChannelAttention(in_channels)
+        self.sa = SpatialAttention()
+
+    def forward(self, x_low, x_high):
+        x_low_att = x_low * self.ca(x_low)
+        x_low_att = x_low_att * self.sa(x_low_att)
+        fused = torch.cat([x_high, x_low_att], dim=1)
+        return fused
+
 class SCanNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=7, input_size=512):
         super(SCanNet, self).__init__()
@@ -119,10 +182,11 @@ class SCanNet(nn.Module):
         self.Dec1  = _DecoderBlock(128, 64,  128)
         self.Dec2  = _DecoderBlock(128, 64,  128)
         
+
         self.classifierA = nn.Conv2d(128, num_classes, kernel_size=1)
         self.classifierB = nn.Conv2d(128, num_classes, kernel_size=1)
         self.classifierCD = nn.Sequential(nn.Conv2d(128, 64, kernel_size=1), nn.BatchNorm2d(64), nn.ReLU(), nn.Conv2d(64, 1, kernel_size=1))
-            
+
         initialize_weights(self.Dec1, self.Dec2, self.classifierA, self.classifierB, self.resCD, self.DecCD, self.classifierCD)
     
     def _make_layer(self, block, inplanes, planes, blocks, stride=1):
