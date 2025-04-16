@@ -23,14 +23,14 @@ from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 from datasets import RS_ST as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'SCanNet_psd_2'
+NET_NAME = 'SCanNet_psd_advanced'
 DATA_NAME = 'ST'
 ###############################################
 # Training options
 ###############################################
 args = {
-    'train_batch_size': 8,
-    'val_batch_size': 8,
+    'train_batch_size': 6,
+    'val_batch_size': 6,
     'lr': 0.1,
     'gpu': True,
     'epochs': 100,
