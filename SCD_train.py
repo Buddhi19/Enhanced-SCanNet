@@ -21,6 +21,7 @@ def getPath(env_path):
     return os.path.expanduser(os.getenv(env_path))
 
 CHECKPOINTDIR = getPath('CHECKPOINTDIR_LandSat')
+BESTMODEL = getPath('BESTMODELPATHSCANNET_LandSat')
 
 from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss, multi_class_dice_loss
 from utils.lovasz_losses import lovasz_softmax, lovasz_hinge
@@ -39,9 +40,9 @@ DATA_NAME = 'ST'
 args = {
     'train_batch_size': 6,
     'val_batch_size': 6,
-    'lr': 0.01,
+    'lr': 0.004,
     'gpu': True,
-    'epochs': 50,
+    'epochs': 70,
     'lr_decay_power': 1.5,
     'psd_train': True,
     'psd_TTA': True,
@@ -53,7 +54,8 @@ args = {
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
     'chkpt_dir': CHECKPOINTDIR,
     'log_dir': os.path.join(working_path, 'logs', DATA_NAME, NET_NAME),
-    'load_path': None
+    'load_path': BESTMODEL,
+    'current_epoch': 18,
 }
 ###############################################
 
@@ -104,7 +106,7 @@ def calc_conf(prob, conf_thred):
 
 def main():
     net = Net(3, num_classes=RS.num_classes).cuda()
-    # net.load_state_dict(torch.load(args['load_path']), strict=False)
+    net.load_state_dict(torch.load(args['load_path']), strict=False)
     #freeze_model(net.FCN)
 
     train_set = RS.Data('train', random_flip=True, random_swap=False)
@@ -133,7 +135,7 @@ def train(train_loader, net, criterion, optimizer, val_loader):
     begin_time = time.time()
     all_iters = float(len(train_loader) * args['epochs'])
     criterion_sc = ChangeSimilarity().cuda()
-    curr_epoch = 0
+    curr_epoch = args['current_epoch']
     
     while True:
         torch.cuda.empty_cache()
