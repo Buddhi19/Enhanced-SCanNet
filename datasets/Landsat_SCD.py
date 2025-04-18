@@ -6,7 +6,8 @@ from torch.utils import data
 import utils.transform as transform
 import matplotlib.pyplot as plt
 from skimage.transform import rescale
-from torchvision.transforms import functional as F
+from torchvision.transforms import functional as TF
+import cv2
 
 num_classes = 5
 ClASSES = ['0: No change', '1: Farmland', '2: Desert', '3: Building', '4: Water']
@@ -23,7 +24,7 @@ MEAN_B = np.array([137.36, 136.50, 135.144])
 STD_B  = np.array([85.97, 86.01, 86.81])
 
 
-root = 'D:/RS/Landsat/'
+root = os.path.abspath('/storage/scratch3/buddhiw-change-detection/Datasets/Landsat-SCD')
 
 colormap2label = np.zeros(256 ** 3)
 for i, cm in enumerate(COLORMAP):
@@ -109,74 +110,79 @@ def read_RSimages(mode, rescale=False):
     
     return imgsA_list, imgsB_list, labelsA, labelsB
 
+TARGET_SIZE = (512,512)                        # (width, height)
+
+def _resize_pair(img, lbl=None):
+    """Resize image (and optionally its label) to TARGET_SIZE."""
+    img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LINEAR)
+    if lbl is not None:
+        lbl = cv2.resize(lbl, TARGET_SIZE, interpolation=cv2.INTER_NEAREST)
+        return img, lbl
+    return img
+
 class Data(data.Dataset):
-    def __init__(self, mode, random_flip=False, valid_label=False):
+    def __init__(self, mode, random_flip=False, valid_label=False, random_swap=False):
         self.random_flip = random_flip
         self.valid_label = valid_label
         self.imgsA_list, self.imgsB_list, self.labelsA, self.labelsB = read_RSimages(mode)
-        self.len = len(self.imgsA_list)
-    
-    def get_mask_name(self, idx):
-        mask_name = os.path.split(self.imgsA_list[idx])[-1]
-        return mask_name
-
-    def __getitem__(self, idx):
-        img_A = io.imread(self.imgsA_list[idx])
-        img_B = io.imread(self.imgsB_list[idx])
-        if self.valid_label:
-            invalid_labelA = np.all(img_A == 255, axis=2)
-            invalid_labelB = np.all(img_B == 255, axis=2)
-            invalid_label = invalid_labelA * invalid_labelB
-            valid_label = np.logical_not(invalid_label)
-        label_A = self.labelsA[idx]
-        label_B = self.labelsB[idx]
-        #label_A = Color2Index(label_A)
-        #label_B = Color2Index(label_B)
-        img_A = normalize_image(img_A, 'A')
-        img_B = normalize_image(img_B, 'B')
-        if self.valid_label:
-            if self.random_flip:
-                img_A, img_B, label_A, label_B, valid_label = transform.rand_rot90_flip_SCD5([img_A, img_B, label_A, label_B, valid_label])
-            return F.to_tensor(img_A), F.to_tensor(img_B), torch.from_numpy(label_A), torch.from_numpy(label_B), torch.from_numpy(valid_label)
-        else:
-            if self.random_flip:
-                img_A, img_B, label_A, label_B = transform.rand_rot90_flip_SCD([img_A, img_B, label_A, label_B])
-            return F.to_tensor(img_A), F.to_tensor(img_B), torch.from_numpy(label_A), torch.from_numpy(label_B)
 
     def __len__(self):
         return len(self.imgsA_list)
 
-class Data_test(data.Dataset):
-    def __init__(self, test_dir):
-        self.imgs_A = []
-        self.imgs_B = []
-        self.mask_name_list = []
-                
-        imgA_dir = os.path.join(test_dir, 'A')
-        imgB_dir = os.path.join(test_dir, 'B')
-        list_path=os.path.join(test_dir, 'test_list.txt')
-        list_info = open(list_path, 'r')
-        data_list = list_info.readlines()
-        data_list = [item.rstrip() for item in data_list]
-        
-        for it in data_list:
-            if (it[-4:]=='.png'):
-                img_A_path = os.path.join(imgA_dir, it)
-                img_B_path = os.path.join(imgB_dir, it)
-                self.imgs_A.append(io.imread(img_A_path))
-                self.imgs_B.append(io.imread(img_B_path))
-                self.mask_name_list.append(it)
-        self.len = len(self.imgs_A)
-
-    def get_mask_name(self, idx):
-        return self.mask_name_list[idx]
-
     def __getitem__(self, idx):
-        img_A = self.imgs_A[idx]
-        img_B = self.imgs_B[idx]
+        # --- read + resize ---------------------------------------------------
+        img_A = io.imread(self.imgsA_list[idx])
+        img_B = io.imread(self.imgsB_list[idx])
+        label_A = self.labelsA[idx]
+        label_B = self.labelsB[idx]
+
+        img_A, label_A = _resize_pair(img_A, label_A)
+        img_B, label_B = _resize_pair(img_B, label_B)
+
+        # --- optional valid/invalid‑pixel mask ------------------------------
+        if self.valid_label:
+            invalid = np.all(img_A == 255, 2) & np.all(img_B == 255, 2)
+            valid_mask = np.logical_not(invalid).astype(np.uint8)
+            valid_mask = cv2.resize(valid_mask, TARGET_SIZE, cv2.INTER_NEAREST)
+
+        # --- normalise, flip, tensorise -------------------------------------
         img_A = normalize_image(img_A, 'A')
         img_B = normalize_image(img_B, 'B')
-        return F.to_tensor(img_A), F.to_tensor(img_B)
 
-    def __len__(self):
-        return self.len
+        if self.random_flip:
+            if self.valid_label:
+                img_A, img_B, label_A, label_B, valid_mask = \
+                    transform.rand_rot90_flip_SCD5(img_A, img_B, label_A, label_B, valid_mask)
+            else:
+                img_A, img_B, label_A, label_B = \
+                    transform.rand_rot90_flip_SCD(img_A, img_B, label_A, label_B)
+
+        img_A = TF.to_tensor(img_A);  img_B = TF.to_tensor(img_B)
+        label_A = torch.from_numpy(label_A);  label_B = torch.from_numpy(label_B)
+
+        if self.valid_label:
+            valid_mask = torch.from_numpy(valid_mask)
+            return img_A, img_B, label_A, label_B, valid_mask
+        else:
+            return img_A, img_B, label_A, label_B, 1
+
+
+class Data_test(data.Dataset):
+    def __init__(self, test_dir=root):
+        self.imgs_A, self.imgs_B, self.mask_name_list = [], [], []
+
+        imgA_dir, imgB_dir = os.path.join(test_dir, 'A'), os.path.join(test_dir, 'B')
+        with open(os.path.join(test_dir, 'test_list.txt')) as fp:
+            for name in (n.strip() for n in fp):
+                if name.endswith('.png'):
+                    self.imgs_A.append(io.imread(os.path.join(imgA_dir, name)))
+                    self.imgs_B.append(io.imread(os.path.join(imgB_dir, name)))
+                    self.mask_name_list.append(name)
+
+    def __len__(self):  return len(self.imgs_A)
+    def get_mask_name(self, idx):  return self.mask_name_list[idx]
+
+    def __getitem__(self, idx):
+        img_A = normalize_image(_resize_pair(self.imgs_A[idx]), 'A')
+        img_B = normalize_image(_resize_pair(self.imgs_B[idx]), 'B')
+        return TF.to_tensor(img_A), TF.to_tensor(img_B)

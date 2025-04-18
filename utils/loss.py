@@ -268,3 +268,11 @@ def dice_loss(pred, target, smooth=1.0):
     
     dice = (2. * intersection + smooth) / (union + smooth)
     return 1 - dice.mean()
+
+def multi_class_dice_loss(pred, target, smooth=1.0, num_classes=7):
+    pred = F.softmax(pred, dim=1)
+    target_one_hot = F.one_hot(target, num_classes=num_classes).permute(0, 3, 1, 2).float()
+    intersection = (pred * target_one_hot).sum(dim=(0, 2, 3))
+    union = pred.sum(dim=(0, 2, 3)) + target_one_hot.sum(dim=(0, 2, 3))
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return 1 - dice.mean()
