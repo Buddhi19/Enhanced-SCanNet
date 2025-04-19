@@ -4,3 +4,4 @@ models/__pycache__/
 logs/
 __pycache__/
 checkpoints/
+.env

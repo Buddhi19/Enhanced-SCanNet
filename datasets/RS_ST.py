@@ -19,6 +19,7 @@ STD_B  = np.array([49.41,  47.01,  47.94])
 MAIN_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 root = os.path.join(MAIN_DIR, 'Datasets', 'SECOND')
 
+
 colormap2label = np.zeros(256 ** 3)
 for i, cm in enumerate(ST_COLORMAP):
     colormap2label[(cm[0] * 256 + cm[1]) * 256 + cm[2]] = i
@@ -69,7 +70,7 @@ def normalize_images(imgs, time='A'):
         imgs[i] = normalize_image(im, time)
     return imgs
 
-def read_RSimages(mode):
+def read_RSimages(mode, root=root):
     #assert mode in ['train', 'val', 'test']
     img_A_dir = os.path.join(root, mode, 'T1')
     img_B_dir = os.path.join(root, mode, 'T2')

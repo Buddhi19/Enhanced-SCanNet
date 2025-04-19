@@ -4,7 +4,6 @@ from torchvision import models
 from torch.nn import functional as F
 from utils.misc import initialize_weights
 from models.CSWin_Transformer import mit
-from models.GuidedFusion import PyramidFusion, ASPP
 
 args = {'hidden_size': 128*3,
         'mlp_dim': 256*3,
@@ -182,11 +181,10 @@ class SCanNet(nn.Module):
         self.Dec1  = _DecoderBlock(128, 64,  128)
         self.Dec2  = _DecoderBlock(128, 64,  128)
         
-
         self.classifierA = nn.Conv2d(128, num_classes, kernel_size=1)
         self.classifierB = nn.Conv2d(128, num_classes, kernel_size=1)
         self.classifierCD = nn.Sequential(nn.Conv2d(128, 64, kernel_size=1), nn.BatchNorm2d(64), nn.ReLU(), nn.Conv2d(64, 1, kernel_size=1))
-
+            
         initialize_weights(self.Dec1, self.Dec2, self.classifierA, self.classifierB, self.resCD, self.DecCD, self.classifierCD)
     
     def _make_layer(self, block, inplanes, planes, blocks, stride=1):
@@ -229,7 +227,7 @@ class SCanNet(nn.Module):
         x1, x2, xc = self.CD_forward(x1, x2)
 
         x1 = self.Dec1(x1, x1_low)
-        x2 = self.Dec2(x2, x2_low)        
+        x2 = self.Dec2(x2, x2_low)
         xc_low = torch.cat([x1_low, x2_low], 1)
         xc = self.DecCD(xc, xc_low)
                 

@@ -14,26 +14,34 @@ from torch.utils.data import DataLoader
 
 working_path = os.path.dirname(os.path.abspath(__file__))
 
-from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss
+from dotenv import load_dotenv
+
+load_dotenv()
+def getPath(env_path):
+    return os.path.expanduser(os.getenv(env_path))
+
+CHECKPOINTDIR = getPath('CHECKPOINTDIR_LandSat')
+
+from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss, multi_class_dice_loss
 from utils.lovasz_losses import lovasz_softmax, lovasz_hinge
 from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 
 # Data and model choose
 ###############################################
-from datasets import RS_ST as RS
+from datasets import Landsat_SCD as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'SCanNet_psd_2'
+NET_NAME = 'LandSat_SCD'
 DATA_NAME = 'ST'
 ###############################################
 # Training options
 ###############################################
 args = {
-    'train_batch_size': 8,
-    'val_batch_size': 8,
-    'lr': 0.1,
+    'train_batch_size': 6,
+    'val_batch_size': 6,
+    'lr': 0.01,
     'gpu': True,
-    'epochs': 100,
+    'epochs': 50,
     'lr_decay_power': 1.5,
     'psd_train': True,
     'psd_TTA': True,
@@ -43,9 +51,9 @@ args = {
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
-    'chkpt_dir': os.path.join(working_path, 'checkpoints', DATA_NAME),
+    'chkpt_dir': CHECKPOINTDIR,
     'log_dir': os.path.join(working_path, 'logs', DATA_NAME, NET_NAME),
-    'load_path': os.path.join(working_path, 'checkpoints', DATA_NAME, 'xx.pth')
+    'load_path': None
 }
 ###############################################
 
@@ -96,12 +104,13 @@ def calc_conf(prob, conf_thred):
 
 def main():
     net = Net(3, num_classes=RS.num_classes).cuda()
-    #net.load_state_dict(torch.load(args['load_path']), strict=False)
+    # net.load_state_dict(torch.load(args['load_path']), strict=False)
     #freeze_model(net.FCN)
 
     train_set = RS.Data('train', random_flip=True, random_swap=False)
     train_loader = DataLoader(train_set, batch_size=args['train_batch_size'], shuffle=True)
-    val_set = RS.Data('test')
+    # val_set = RS.Data('test') for second
+    val_set = RS.Data('val')
     val_loader = DataLoader(val_set, batch_size=args['val_batch_size'], shuffle=False)
 
     criterion = CrossEntropyLoss2d(ignore_index=0).cuda()
@@ -212,8 +221,8 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                 if args['vis_psd'] and not running_iter%100:
                     psdA_color = RS.Index2Color(labels_A[0].cpu().detach().numpy())
                     psdB_color = RS.Index2Color(labels_B[0].cpu().detach().numpy())
-                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
-                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
+                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
+                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
 
             ce_loss_A = criterion(outputs_A, labels_A)
             ce_loss_B = criterion(outputs_B, labels_B)
@@ -221,8 +230,13 @@ def train(train_loader, net, criterion, optimizer, val_loader):
             lovasz_loss_A = lovasz_softmax(outputs_A, labels_A, per_image=True)
             lovasz_loss_B = lovasz_softmax(outputs_B, labels_B, per_image=True)
 
-            loss_seg = 0.5 * (ce_loss_A + ce_loss_B) + 0.5 * (lovasz_loss_A + lovasz_loss_B) + criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B)
+            # dice_loss_A = multi_class_dice_loss(outputs_A, labels_A)
+            # dice_loss_B = multi_class_dice_loss(outputs_B, labels_B)
 
+            loss_seg = (0.5 * (ce_loss_A + ce_loss_B) + 
+                        0.5 * (lovasz_loss_A + lovasz_loss_B) + 
+                        # 0.25 * (dice_loss_A + dice_loss_B) + 
+                        criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B))
 
            # Ensure binary labels are float
             labels_bn_float = labels_bn.float()
@@ -232,7 +246,7 @@ def train(train_loader, net, criterion, optimizer, val_loader):
             dice = dice_loss(out_change, labels_bn_float)
             lovasz = lovasz_hinge(out_change.squeeze(1), labels_bn_float.squeeze(1))
 
-            loss_bn = 0.5 * bce_loss + 0.3 * dice + 0.2 * lovasz
+            loss_bn = 1 * bce_loss + 0.3 * dice + 0.2 * lovasz
 
             loss_sc = criterion_sc(outputs_A[:, 1:], outputs_B[:, 1:], labels_bn)
                                   
@@ -378,5 +392,5 @@ def adjust_lr(optimizer, iter_ratio, init_lr=args['lr']):
 
 
 if __name__ == '__main__':
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(1)
     main()
