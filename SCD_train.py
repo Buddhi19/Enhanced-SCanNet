@@ -31,7 +31,7 @@ from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 from datasets import Landsat_SCD as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'LandSat_SCD'
+NET_NAME = 'SCanNet_Landsat'
 DATA_NAME = 'ST'
 ###############################################
 # Training options
@@ -39,7 +39,7 @@ DATA_NAME = 'ST'
 args = {
     'train_batch_size': 6,
     'val_batch_size': 6,
-    'lr': 0.01,
+    'lr': 0.1,
     'gpu': True,
     'epochs': 50,
     'lr_decay_power': 1.5,
@@ -230,12 +230,12 @@ def train(train_loader, net, criterion, optimizer, val_loader):
             lovasz_loss_A = lovasz_softmax(outputs_A, labels_A, per_image=True)
             lovasz_loss_B = lovasz_softmax(outputs_B, labels_B, per_image=True)
 
-            # dice_loss_A = multi_class_dice_loss(outputs_A, labels_A)
-            # dice_loss_B = multi_class_dice_loss(outputs_B, labels_B)
+            dice_loss_A = multi_class_dice_loss(outputs_A, labels_A, num_classes=5)
+            dice_loss_B = multi_class_dice_loss(outputs_B, labels_B, num_classes=5)
 
             loss_seg = (0.5 * (ce_loss_A + ce_loss_B) + 
                         0.5 * (lovasz_loss_A + lovasz_loss_B) + 
-                        # 0.25 * (dice_loss_A + dice_loss_B) + 
+                        0.25 * (dice_loss_A + dice_loss_B) + 
                         criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B))
 
            # Ensure binary labels are float
