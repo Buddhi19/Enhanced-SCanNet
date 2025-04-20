@@ -1,50 +1,45 @@
-# SCanNet
-Pytorch codes of **Joint Spatio-Temporal Modeling for Semantic Change Detection in Remote Sensing Images** [[paper]](https://ieeexplore.ieee.org/document/10443352)
+# Enhanced‑SCanNet 🔍 🌍
 
+ **Semantic Change Detection with CBAM & Composite Loss**  
+A lightweight upgrade of [SCanNet](https://github.com/DingLei14/SCanNet) that fuses **Convolutional Block Attention Modules (CBAM)** into each decoder stage and trains with a **composite loss** (Cross‑Entropy + Dice + Lovász‑Softmax) to sharpen boundaries and fight class imbalance.
 
-![alt text](https://github.com/ggsDing/SCanNet/blob/main/SCanNet.png)
-![alt text](https://github.com/ggsDing/SCanNet/blob/main/L_psd_sc.png)
+### 🎯 Loss Function
 
-## Checkpoints
+$
+L_\text{total}= 
+\;\alpha\!\bigl(L^{\text{sem}}_{\text{CE}}+\lambda_1L^{\text{sem}}_{\text{Dice}}+\lambda_2L^{\text{sem}}_{\text{Lovász}}\bigr)\\
++&\;\beta\!\bigl(L^{\text{psd}}_{\text{CE}}+\lambda_3L^{\text{psd}}_{\text{Dice}}+\lambda_4L^{\text{psd}}_{\text{Lovász}}\bigr)\\
++&\;\gamma\,L_{\text{consistency}}
+$
 
-For readers to easily evaluate the accuracy, we provide the trained weights.
+## 🚀 Quick Start
 
-SECOND:  
+```bash
+# clone & install
+git clone https://github.com/Buddhi19/SCanNet.git
+cd SCanNet
+pip install -r requirements.txt
 
-1.[Drive](https://drive.google.com/file/d/1KfA_s3UVqK645WVYPdQ8aIlQkpnuPaPY/view?usp=sharing)  
-2.[Baidu](https://pan.baidu.com/s/1zL3H1IlTXB9QnHDxY8sRpg?pwd=SCAN) (pswd: SCAN)
-
-LandsatSCD:  
-
-1.[Drive](https://drive.google.com/file/d/1lCWNUyZyMH7gYTwnhcs4-4oOuveKbJCI/view?usp=drive_link)  
-2.[Baidu](https://pan.baidu.com/s/1qih4E1g1c3nbbJ3gFaSlYA?pwd=SCAN) (pswd: SCAN)
-
-
-## Landsat-SCD
-
-The land-scd dataset needs to be pre-processed to meet the experimental settings in this paper.
-More details are provided at [/datasets/LandsatSCD/read_me.md](https://github.com/ggsDing/SCanNet/tree/main/datasets/LandsatSCD)
-
-For readers' convenience, we also provide the preprocessed data:
-
-[Baidu Netdisk](https://pan.baidu.com/s/1ynizp4WST6EeBo6pxo6Kog?pwd=lscd) (psswd lscd)
-
-[Google Drive](https://drive.google.com/file/d/11CkLhakNtfaBH78SGTHxcXKNsBM524H5/view?usp=sharing)
-
-## Cite SCanNet
-
-If you find this work useful or interesting, please consider citing the following BibTeX entry.
+# training
+python SCD_train.py
 
 ```
-@article{ding2024joint,
-  title={Joint Spatio-Temporal Modeling for Semantic Change Detection in Remote Sensing Images},
-  author={Ding, Lei and Zhang, Jing and Guo, Haitao and Zhang, Kai and Liu, Bing and Bruzzone, Lorenzo},
-  journal={IEEE Transactions on Geoscience and Remote Sensing}, 
-  year={2024},
-  volume={62},
-  pages={1-14},
-  doi={10.1109/TGRS.2024.3362795}
-}
-```
 
-(Note: This repository is under construction, contents are not final.)
+## 📊 Benchmark Highlights
+
+| Dataset      | Metric | SCanNet [1] | **Enhanced** |
+|--------------|--------|-------------|--------------|
+| SECOND       | OA     | 87.05 | **87.80** |
+|              | F<sub>scd</sub> | 62.09 | **63.33** |
+| Landsat‑SCD  | OA     | 96.26 | **97.21** |
+|              | mIoU   | 88.96 | **89.73** |
+
+See `/docs/results/` for full tables & plots.
+
+## ❤️ Acknowledgements
+
+* **Original SCanNet** – massive thanks to Lei Ding *et al.* (🔗 <https://github.com/DingLei14/SCanNet>) for releasing the baseline code and datasets.  
+* **CBAM** implementation adapted from Woo *et al.*, “Convolutional Block Attention Module,” ECCV 2018.  
+
+
+---
