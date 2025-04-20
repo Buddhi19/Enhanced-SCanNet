@@ -7,7 +7,7 @@ class CrossEntropyLoss2d(nn.Module):
     def __init__(self, weight=None, ignore_index=-1):
         super(CrossEntropyLoss2d, self).__init__()
         self.nll_loss = nn.NLLLoss(weight=weight, ignore_index=ignore_index,
-                                   reduction='elementwise_mean')
+                                   reduction='mean')
 
     def forward(self, inputs, targets):
         return self.nll_loss(F.log_softmax(inputs, dim=1), targets)
@@ -257,3 +257,22 @@ class DiceLoss(nn.Module):
                 total_loss += dice_loss
 
         return total_loss/target.shape[1]
+
+def dice_loss(pred, target, smooth=1.0):
+    pred = torch.sigmoid(pred)  # ensure it's in [0, 1]
+    pred = pred.contiguous()
+    target = target.contiguous()
+
+    intersection = (pred * target).sum(dim=(2, 3))
+    union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
+    
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return 1 - dice.mean()
+
+def multi_class_dice_loss(pred, target, smooth=1.0, num_classes=7):
+    pred = F.softmax(pred, dim=1)
+    target_one_hot = F.one_hot(target, num_classes=num_classes).permute(0, 3, 1, 2).float()
+    intersection = (pred * target_one_hot).sum(dim=(0, 2, 3))
+    union = pred.sum(dim=(0, 2, 3)) + target_one_hot.sum(dim=(0, 2, 3))
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return 1 - dice.mean()

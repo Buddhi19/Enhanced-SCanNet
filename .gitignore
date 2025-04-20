@@ -1,10 +1,7 @@
 *.png
-checkpoints/
-datasets/
-*.mat
+results/
+models/__pycache__/
 logs/
-models/
-pycache/
-__pycache__
-*.mat
-*.pyc
+__pycache__/
+checkpoints/
+.env

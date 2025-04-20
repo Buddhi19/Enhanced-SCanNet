@@ -14,7 +14,16 @@ from torch.utils.data import DataLoader
 
 working_path = os.path.dirname(os.path.abspath(__file__))
 
-from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity
+from dotenv import load_dotenv
+
+load_dotenv()
+def getPath(env_path):
+    return os.path.expanduser(os.getenv(env_path))
+
+CHECKPOINTDIR = getPath('CHECKPOINTDIR')
+
+from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss, multi_class_dice_loss
+from utils.lovasz_losses import lovasz_softmax, lovasz_hinge
 from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 
 # Data and model choose
@@ -22,7 +31,7 @@ from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 from datasets import RS_ST as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'SCanNet_psd'
+NET_NAME = 'RERUN_OURS'
 DATA_NAME = 'ST'
 ###############################################
 # Training options
@@ -32,19 +41,19 @@ args = {
     'val_batch_size': 6,
     'lr': 0.1,
     'gpu': True,
-    'epochs': 50,
+    'epochs': 130,
     'lr_decay_power': 1.5,
     'psd_train': True,
     'psd_TTA': True,
     'vis_psd': True,
     'psd_init_Fscd': 0.6,
-    'print_freq': 50,
+    'print_freq': 10,
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
-    'chkpt_dir': os.path.join(working_path, 'checkpoints', DATA_NAME),
+    'chkpt_dir': CHECKPOINTDIR,
     'log_dir': os.path.join(working_path, 'logs', DATA_NAME, NET_NAME),
-    'load_path': os.path.join(working_path, 'checkpoints', DATA_NAME, 'xx.pth')
+    'load_path': None
 }
 ###############################################
 
@@ -95,11 +104,12 @@ def calc_conf(prob, conf_thred):
 
 def main():
     net = Net(3, num_classes=RS.num_classes).cuda()
-    #net.load_state_dict(torch.load(args['load_path']), strict=False)
+    # net.load_state_dict(torch.load(args['load_path']), strict=False)
     #freeze_model(net.FCN)
 
     train_set = RS.Data('train', random_flip=True, random_swap=False)
     train_loader = DataLoader(train_set, batch_size=args['train_batch_size'], shuffle=True)
+    # val_set = RS.Data('test') for second
     val_set = RS.Data('test')
     val_loader = DataLoader(val_set, batch_size=args['val_batch_size'], shuffle=False)
 
@@ -112,13 +122,13 @@ def main():
     print('Training finished.')
 
 def train(train_loader, net, criterion, optimizer, val_loader):
-    # torch.cuda.set_device(1)
     net_psd = None
     conf_thred = AverageThred(RS.num_classes)
                       
     bestaccT = 0
     bestFscdV = 0.0
     bestloss = 1.0
+    best_Sek = 0.0
     bestaccV = 0.0
     begin_time = time.time()
     all_iters = float(len(train_loader) * args['epochs'])
@@ -211,17 +221,33 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                 if args['vis_psd'] and not running_iter%100:
                     psdA_color = RS.Index2Color(labels_A[0].cpu().detach().numpy())
                     psdB_color = RS.Index2Color(labels_B[0].cpu().detach().numpy())
-                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
-                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + imgs_id[0] + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
+                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_psdA_epoch%diter%d.png'%(curr_epoch, running_iter)), psdA_color)
+                    io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_psdB_epoch%diter%d.png'%(curr_epoch, running_iter)), psdB_color)
 
-            labels_A = torch.argmax(labels_A, dim=3).long()  
-            labels_B = torch.argmax(labels_B, dim=3).long() 
-            
-            labels_bn = torch.argmax(labels_bn, dim=-1).unsqueeze(1).float()
-            # print(f"out_change: {out_change.shape}, labels_bn: {labels_bn.shape}")
+            ce_loss_A = criterion(outputs_A, labels_A)
+            ce_loss_B = criterion(outputs_B, labels_B)
 
-            loss_seg = criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B)
-            loss_bn = weighted_BCE_logits(out_change, labels_bn)
+            lovasz_loss_A = lovasz_softmax(outputs_A, labels_A, per_image=True)
+            lovasz_loss_B = lovasz_softmax(outputs_B, labels_B, per_image=True)
+
+            dice_loss_A = multi_class_dice_loss(outputs_A, labels_A)
+            dice_loss_B = multi_class_dice_loss(outputs_B, labels_B)
+
+            loss_seg = (0.5 * (ce_loss_A + ce_loss_B) + 
+                        0.5 * (lovasz_loss_A + lovasz_loss_B) + 
+                        0.25 * (dice_loss_A + dice_loss_B) + 
+                        criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B))
+
+           # Ensure binary labels are float
+            labels_bn_float = labels_bn.float()
+
+            # Binary change detection loss
+            bce_loss = F.binary_cross_entropy_with_logits(out_change, labels_bn_float)
+            dice = dice_loss(out_change, labels_bn_float)
+            lovasz = lovasz_hinge(out_change.squeeze(1), labels_bn_float.squeeze(1))
+
+            loss_bn = 1 * bce_loss + 0.3 * dice + 0.2 * lovasz
+
             loss_sc = criterion_sc(outputs_A[:, 1:], outputs_B[:, 1:], labels_bn)
                                   
             loss = loss_seg*0.5 + loss_bn + loss_sc
@@ -261,9 +287,16 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                     train_seg_loss.val, train_bn_loss.val, acc_meter.val * 100))  # sc_loss %.4f, train_sc_loss.val, 
 
         Fscd_v, mIoU_v, Sek_v, acc_v, loss_v = validate(val_loader, net, criterion, curr_epoch)
+
+        writer.add_scalar('test Fscd', Fscd_v*100, curr_epoch)
+        writer.add_scalar('test IoU', mIoU_v*100, curr_epoch)
+        writer.add_scalar('test Sek', Sek_v*100, curr_epoch)
+        writer.add_scalar('test accuracy', acc_v*100, curr_epoch)
+
         if acc_meter.avg > bestaccT: bestaccT = acc_meter.avg
-        if Fscd_v>bestFscdV:
+        if Sek_v>best_Sek:
             bestFscdV=Fscd_v
+            best_Sek=Sek_v
             bestaccV=acc_v
             bestloss=loss_v
             net_psd = copy.deepcopy(net)
@@ -296,10 +329,6 @@ def validate(val_loader, net, criterion, curr_epoch):
 
         with torch.no_grad():
             out_change, outputs_A, outputs_B = net(imgs_A, imgs_B)
-
-            labels_A = torch.argmax(labels_A, dim=3).long()
-            labels_B = torch.argmax(labels_B, dim=3).long()
-
             loss_A = criterion(outputs_A, labels_A)
             loss_B = criterion(outputs_B, labels_B)
             loss = loss_A * 0.5 + loss_B * 0.5
@@ -327,41 +356,6 @@ def validate(val_loader, net, criterion, curr_epoch):
         if curr_epoch % args['predict_step'] == 0 and vi == 0:
             pred_A_color = RS.Index2Color(preds_A[0])
             pred_B_color = RS.Index2Color(preds_B[0])
-
-            ############################################################################################
-            label_A_color = RS.Index2Color(labels_A[0])
-            label_B_color = RS.Index2Color(labels_B[0])
-
-            str_curr_epoch = str(curr_epoch)
-
-            pred_dir_epoch = os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch)
-            if not os.path.exists(pred_dir_epoch):
-                os.makedirs(pred_dir_epoch)
-
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_A.png'), recon_A[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_recon_B.png'), recon_B[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x1_noisy.png'), x1_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
-            # io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_x2_noisy.png'), x2_noisy[0].cpu().detach().numpy().transpose(1, 2, 0))
-
-            import scipy.io as sio
-
-            data_to_save = {
-                # 'recon_A': recon_A[0].cpu().detach().numpy(),
-                # 'recon_B': recon_B[0].cpu().detach().numpy(),
-                # 'x1_noisy': x1_noisy[0].cpu().detach().numpy(),
-                # 'x2_noisy': x2_noisy[0].cpu().detach().numpy(),
-                'label_A': label_A_color,
-                'label_B' : label_B_color,
-                'pred_A' : pred_A_color,
-                'pred_B' : pred_B_color
-            }
-
-            sio.savemat(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_data.mat'), data_to_save)
-
-            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_A.png'), (label_A_color*255).astype(np.uint8))
-            io.imsave(os.path.join(args['pred_dir'], NET_NAME, str_curr_epoch + '_label_B.png'), (label_B_color*255).astype(np.uint8))
-            ############################################################################################
-
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_A.png'), pred_A_color)
             io.imsave(os.path.join(args['pred_dir'], NET_NAME + '_B.png'), pred_B_color)
             print('Prediction saved!')
