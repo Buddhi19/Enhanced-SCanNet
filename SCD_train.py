@@ -48,7 +48,7 @@ args = {
     'psd_TTA': True,
     'vis_psd': True,
     'psd_init_Fscd': 0.6,
-    'print_freq': 50,
+    'print_freq': 10,
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
