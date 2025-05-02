@@ -14,33 +14,24 @@ from torch.utils.data import DataLoader
 
 working_path = os.path.dirname(os.path.abspath(__file__))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-def getPath(env_path):
-    return os.path.expanduser(os.getenv(env_path))
-
-CHECKPOINTDIR = getPath('CHECKPOINTDIR_LandSat')
-BESTMODEL = getPath('BESTMODELPATHSCANNET_LandSat')
-
-from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss, multi_class_dice_loss
+from utils.loss import CrossEntropyLoss2d, weighted_BCE_logits, ChangeSimilarity, dice_loss, multi_class_dice_loss, SeK_Loss
 from utils.lovasz_losses import lovasz_softmax, lovasz_hinge
 from utils.utils import accuracy, SCDD_eval_all, AverageMeter
 
 # Data and model choose
 ###############################################
-from datasets import Landsat_SCD as RS
+from datasets import RS_ST as RS
 #from models.TED import TED as Net
 from models.SCanNet import SCanNet as Net
-NET_NAME = 'LandSat_SCD'
-DATA_NAME = 'ST'
+NET_NAME = 'SCanNet_Wavelet_Fusion'
+DATA_NAME = 'ST4'
 ###############################################
 # Training options
 ###############################################
 args = {
     'train_batch_size': 6,
     'val_batch_size': 6,
-    'lr': 0.004,
+    'lr': 0.1,
     'gpu': True,
     'epochs': 70,
     'lr_decay_power': 1.5,
@@ -52,10 +43,9 @@ args = {
     'predict_step': 5,
     'pseudo_thred': 0.6,
     'pred_dir': os.path.join(working_path, 'results', DATA_NAME),
-    'chkpt_dir': CHECKPOINTDIR,
+    'chkpt_dir': os.path.join(working_path, 'checkpoints', DATA_NAME, NET_NAME),
     'log_dir': os.path.join(working_path, 'logs', DATA_NAME, NET_NAME),
-    'load_path': BESTMODEL,
-    'current_epoch': 18,
+    'current_epoch': 0,
 }
 ###############################################
 
@@ -106,14 +96,14 @@ def calc_conf(prob, conf_thred):
 
 def main():
     net = Net(3, num_classes=RS.num_classes).cuda()
-    net.load_state_dict(torch.load(args['load_path']), strict=False)
+    # net.load_state_dict(torch.load(args['load_path']), strict=False)
     #freeze_model(net.FCN)
 
     train_set = RS.Data('train', random_flip=True, random_swap=False)
-    train_loader = DataLoader(train_set, batch_size=args['train_batch_size'], shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=args['train_batch_size'], shuffle=True, num_workers=4)
     # val_set = RS.Data('test') for second
-    val_set = RS.Data('val')
-    val_loader = DataLoader(val_set, batch_size=args['val_batch_size'], shuffle=False)
+    val_set = RS.Data('test')
+    val_loader = DataLoader(val_set, batch_size=args['val_batch_size'], shuffle=False, num_workers=4)
 
     criterion = CrossEntropyLoss2d(ignore_index=0).cuda()
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args['lr'], weight_decay=5e-4, momentum=0.9, nesterov=True)
@@ -136,8 +126,12 @@ def train(train_loader, net, criterion, optimizer, val_loader):
     all_iters = float(len(train_loader) * args['epochs'])
     criterion_sc = ChangeSimilarity().cuda()
     curr_epoch = args['current_epoch']
+    sek_criterion = SeK_Loss(7).cuda()
     
+    cur_iter = 0
+
     while True:
+        cur_iter += 1
         torch.cuda.empty_cache()
         net.train()
         # freeze_model(net.FCN)
@@ -229,16 +223,24 @@ def train(train_loader, net, criterion, optimizer, val_loader):
             ce_loss_A = criterion(outputs_A, labels_A)
             ce_loss_B = criterion(outputs_B, labels_B)
 
-            lovasz_loss_A = lovasz_softmax(outputs_A, labels_A, per_image=True)
-            lovasz_loss_B = lovasz_softmax(outputs_B, labels_B, per_image=True)
+            dice_loss_A = multi_class_dice_loss(outputs_A, labels_A, num_classes=7)
+            dice_loss_B = multi_class_dice_loss(outputs_B, labels_B, num_classes=7)
 
-            # dice_loss_A = multi_class_dice_loss(outputs_A, labels_A)
-            # dice_loss_B = multi_class_dice_loss(outputs_B, labels_B)
+            DICE_WEIGHTS = 0
 
-            loss_seg = (0.5 * (ce_loss_A + ce_loss_B) + 
-                        0.5 * (lovasz_loss_A + lovasz_loss_B) + 
-                        # 0.25 * (dice_loss_A + dice_loss_B) + 
+            loss_seg = (0.5 * (ce_loss_A + ce_loss_B) +  
+                        DICE_WEIGHTS * (dice_loss_A + dice_loss_B) + 
                         criterion(outputs_A, labels_A) + criterion(outputs_B, labels_B))
+
+            change_mask = (labels_bn != 0).float()
+
+            sek_loss_value = sek_criterion(
+                outputs_A, 
+                outputs_B,
+                labels_A,
+                labels_B,
+                change_mask
+            )
 
            # Ensure binary labels are float
             labels_bn_float = labels_bn.float()
@@ -246,13 +248,17 @@ def train(train_loader, net, criterion, optimizer, val_loader):
             # Binary change detection loss
             bce_loss = F.binary_cross_entropy_with_logits(out_change, labels_bn_float)
             dice = dice_loss(out_change, labels_bn_float)
-            lovasz = lovasz_hinge(out_change.squeeze(1), labels_bn_float.squeeze(1))
 
-            loss_bn = 1 * bce_loss + 0.3 * dice + 0.2 * lovasz
+            loss_bn = 1 * bce_loss + DICE_WEIGHTS * dice
 
             loss_sc = criterion_sc(outputs_A[:, 1:], outputs_B[:, 1:], labels_bn)
-                                  
-            loss = loss_seg*0.5 + loss_bn + loss_sc
+
+            SEK = False
+
+            if args['current_epoch'] + cur_iter > 9 and SEK:
+                loss = loss_seg*0.25 + loss_bn*0.5 + loss_sc*0.25 + 1.4 * sek_loss_value
+            else:            
+                loss = loss_seg*0.5 + loss_bn + loss_sc
             loss.backward()
             optimizer.step()
 
@@ -289,6 +295,7 @@ def train(train_loader, net, criterion, optimizer, val_loader):
                     train_seg_loss.val, train_bn_loss.val, acc_meter.val * 100))  # sc_loss %.4f, train_sc_loss.val, 
 
         Fscd_v, mIoU_v, Sek_v, acc_v, loss_v = validate(val_loader, net, criterion, curr_epoch)
+        # global prev_SeK = SeK_v
 
         writer.add_scalar('test Fscd', Fscd_v*100, curr_epoch)
         writer.add_scalar('test IoU', mIoU_v*100, curr_epoch)

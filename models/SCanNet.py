@@ -4,6 +4,7 @@ from torchvision import models
 from torch.nn import functional as F
 from utils.misc import initialize_weights
 from models.CSWin_Transformer import mit
+from pytorch_wavelets import DWTForward, DWTInverse
 
 args = {'hidden_size': 128*3,
         'mlp_dim': 256*3,
@@ -38,25 +39,53 @@ class _DecoderBlock(nn.Module):
         self.sa = SpatialAttention()
 
         # Decoder combines upsampled high-level and attended low-level features
-        in_channels = in_channels_high + reduced_channels
+        in_channels = max(in_channels_high, reduced_channels)
+
+        self.low2high = conv1x1(reduced_channels, in_channels_high)
+        initialize_weights(self.low2high)
+
+            # right after self.sa = SpatialAttention()
+        # ---------------------------------------
+        # 1‐level 2D Haar wavelet
+        self.dwt = DWTForward(J=1, wave='haar')   # computes LL & [LH,HL,HH]
+        self.idwt = DWTInverse(wave='haar')
+
         self.decode = nn.Sequential(
-            conv3x3(in_channels, out_channels),
+            conv3x3(in_channels_high, out_channels),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
 
     def forward(self, x, low_feat):
-        x = self.up(x)  # shape: [B, C, 128, 128]
-        low_feat = self.transit(low_feat)  # shape: [B, C', 128, 128]
+        # 1) Upsample the high-level feature
+        x_up    = self.up(x)  # [B, C_high, H, W]
 
-        # Apply attention
-        low_feat = low_feat * self.ca(low_feat)
-        low_feat = low_feat * self.sa(low_feat)
+        # 2) Reduce & attend the low-level feature
+        low_tr  = self.transit(low_feat)            # [B, C_low//scale, H, W]
+        low_att = low_tr * self.ca(low_tr)          # channel attention
+        low_att = low_att * self.sa(low_att)        # spatial attention
 
-        # Concatenate and decode
-        x = torch.cat((x, low_feat), dim=1)
-        x = self.decode(x)
-        return x
+        # 3) Project low_att → C_high so DWT bands match
+        low_proj = self.low2high(low_att)           # [B, C_high, H, W]
+
+        # 4) Decompose both streams with 1-level Haar DWT
+        Yl_x, Yh_x = self.dwt(x_up)                 # Yl_x: [B,C_high,H/2,W/2], Yh_x[0]: [B,C_high,3,H/2,W/2]
+        Yl_l, Yh_l = self.dwt(low_proj)
+
+        # 5) Fuse low-frequency (LL) by elementwise max
+        fused_LL = torch.max(Yl_x, Yl_l)            # [B,C_high,H/2,W/2]
+
+        # 6) Fuse all high-frequency bands by max
+        fused_HH = torch.max(Yh_x[0], Yh_l[0])      # [B,C_high,3,H/2,W/2]
+
+        # 7) Reconstruct the fused feature map
+        fused = self.idwt((fused_LL, [fused_HH]))   # [B,C_high,H,W]
+
+        # 8) Decode to the desired out_channels
+        out = self.decode(fused)                    # [B, out_channels, H, W]
+        return out
+
+
 
 class FCN(nn.Module):
     def __init__(self, in_channels=3, pretrained=True):
@@ -162,12 +191,27 @@ class AttentionFusion(nn.Module):
         super(AttentionFusion, self).__init__()
         self.ca = ChannelAttention(in_channels)
         self.sa = SpatialAttention()
+        self.gate_conv = conv1x1(2*in_channels, 1)
+        self.sigmoid = nn.Sigmoid()
+        initialize_weights(self.gate_conv)
 
     def forward(self, x_low, x_high):
+        # Apply channel & spatial attention to low-level features
         x_low_att = x_low * self.ca(x_low)
         x_low_att = x_low_att * self.sa(x_low_att)
-        fused = torch.cat([x_high, x_low_att], dim=1)
+
+        # Project attended low-level features up to match x_high’s channels
+        low_proj = self.low2high(x_low_att)  # now same C as x_high
+
+        # Compute gate from the concatenation of both streams
+        joint = torch.cat([x_high, low_proj], dim=1)  # shape [B, 2*C, H, W]
+        g     = self.sigmoid(self.gate_conv(joint))   # shape [B, 1, H, W]
+
+        # Fuse via learned weighted sum
+        fused = g * x_high + (1.0 - g) * low_proj     # shape [B, C, H, W]
+
         return fused
+
 
 class SCanNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=7, input_size=512):
