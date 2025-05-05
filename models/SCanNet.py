@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from utils.misc import initialize_weights
 from models.CSWin_Transformer import mit
 from pytorch_wavelets import DWTForward, DWTInverse
+from kymatio.torch import Scattering2D
 
 args = {'hidden_size': 128*3,
         'mlp_dim': 256*3,
@@ -88,8 +89,9 @@ class _DecoderBlock(nn.Module):
 
 
 class FCN(nn.Module):
-    def __init__(self, in_channels=3, pretrained=True):
+    def __init__(self, in_channels=3, pretrained=True, input_size=512):
         super(FCN, self).__init__()
+        self.input_size = input_size
         resnet = models.resnet34(pretrained=pretrained)
         newconv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         newconv1.weight.data[:, 0:3, :, :].copy_(resnet.conv1.weight.data[:, 0:3, :, :])
@@ -111,6 +113,38 @@ class FCN(nn.Module):
         self.head = nn.Sequential(nn.Conv2d(512, 128, kernel_size=1, stride=1, padding=0, bias=False),
                                   nn.BatchNorm2d(128), nn.ReLU())
         initialize_weights(self.head)
+
+        # ─── Scattering branch ────────────────────────────────────────────────────────
+
+        # 1) we’ll apply scattering at the same 1/4 resolution as layer1:
+        scatt_J     = 2                                        # #scales
+        res4        = self.input_size // 4                          # e.g. 512→128
+        self.scatt  = Scattering2D(J=scatt_J, shape=(res4,res4))
+
+        # 2) figure out how many scattering channels we get:
+        with torch.no_grad():
+            dummy  = torch.zeros(1, in_channels, self.input_size, self.input_size)
+            x0     = self.layer0(dummy)
+            x1     = self.maxpool(x0)
+            sc_out = self.scatt(x1)               # [1, C_in, M, H′, W′]
+            _, C_in, M, Hs, Ws = sc_out.shape
+            C_scatt = C_in * M  
+
+        # 3) project scattering ⟶ 128 dims to match your head
+        self.scatt_proj = nn.Sequential(
+            nn.Conv2d(C_scatt, 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True)
+        )
+        # project fused scattering+head (256 channels) back to 128
+        self.fuse_proj = nn.Sequential(
+            conv1x1(256, 128),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True)
+        )
+        initialize_weights(self.fuse_proj)
+        initialize_weights(self.scatt_proj)
+
                                   
     def _make_layer(self, block, inplanes, planes, blocks, stride=1):
         downsample = None
@@ -125,6 +159,36 @@ class FCN(nn.Module):
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
         return nn.Sequential(*layers)
+    
+    def base_forward(self, x):
+        # --- original ResNet front-end ---
+        x      = self.layer0(x)        # → 1/2
+        x      = self.maxpool(x)       # → 1/4
+        x_low  = self.layer1(x)        # skip (1/4)
+
+        # --- scattering branch ---
+        with torch.no_grad():
+            S = self.scatt(x)               # [B,C_in,M,Hs,Ws]
+        B, C_in, M, Hs, Ws = S.shape
+        S = S.view(B, C_in * M, Hs, Ws)      # [B,C_scatt,Hs,Ws]
+        S = self.scatt_proj(S)               # [B,128,Hs,Ws]
+        S = F.interpolate(S, size=x_low.shape[2:], mode='bilinear', align_corners=False)
+
+        # --- continue ResNet deeper ---
+        x      = self.layer2(x_low)    # → 1/8
+        x      = self.layer3(x)        # → 1/8
+        x      = self.layer4(x)        # → 1/8
+
+        # --- head + fuse with scattering ---
+        x_head = self.head(x)          # [B,128,1/8 H,1/8 W]
+        x_head = F.interpolate(x_head, size=x_low.shape[2:], mode='bilinear', align_corners=False)
+
+        # concatenate scattering + head, then use the pre-defined fuse_proj
+        x_fuse = torch.cat([x_head, S], dim=1)     # [B,256,H_low,W_low]
+        x      = self.fuse_proj(x_fuse)            # now [B,128,H_low,W_low]
+
+        return x, x_low
+
 
 class ResBlock(nn.Module):
     expansion = 1
@@ -217,7 +281,7 @@ class SCanNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=7, input_size=512):
         super(SCanNet, self).__init__()
         feat_size = input_size//4
-        self.FCN = FCN(in_channels, pretrained=True)
+        self.FCN = FCN(in_channels, pretrained=True, input_size=input_size)
         self.resCD = self._make_layer(ResBlock, 256, 128, 6, stride=1)
         self.transformer = mit(img_size=feat_size, in_chans=128*3, embed_dim=128*3)
         
@@ -247,15 +311,37 @@ class SCanNet(nn.Module):
         return nn.Sequential(*layers)
     
     def base_forward(self, x):
+        # --- original ResNet front-end ---
+        x = self.layer0(x)        # conv1+bn+relu  →  1/2
+        x = self.maxpool(x)       #                 →  1/4
+        x_low = self.layer1(x)    # layer1 output  →  1/4
+
+        # --- scattering branch (same 1/4 input) ---
+        with torch.no_grad():
+            S = self.scatt(x)     # [B, C_scatt, 1/4 H, 1/4 W]
+        S = self.scatt_proj(S)    # [B,   128  , 1/4 H, 1/4 W]
+
+        # --- continue ResNet deeper ---
+        x = self.layer2(x_low)    # → 1/8
+        x = self.layer3(x)        # → 1/8 (stride overrides)
+        x = self.layer4(x)        # → 1/8
+
+        # --- your existing head + fusion with scattering ---
+        x_head = self.head(x)     # [B,128,1/8 H,1/8 W]
         
-        x = self.FCN.layer0(x) #size:1/2
-        x = self.FCN.maxpool(x) #size:1/4
-        x_low = self.FCN.layer1(x) #size:1/4
-        x = self.FCN.layer2(x_low) #size:1/8
-        x = self.FCN.layer3(x)
-        x = self.FCN.layer4(x)
-        x = self.FCN.head(x)
+        # upsample head back to 1/4 so we can fuse with S
+        x_head = F.interpolate(x_head, size=x_low.shape[2:], mode='bilinear', align_corners=False)
+
+        # fuse by concatenation (or you can try max, sum, gated fuse…):
+        x_fuse = torch.cat([x_head, S], dim=1)   # [B,256,1/4 H,1/4 W]
+        
+        # project back to 128 before passing to decoders
+        x = conv1x1(256, 128)(x_fuse)
+        x = nn.BatchNorm2d(128)(x)
+        x = nn.ReLU(inplace=True)(x)
+
         return x, x_low
+
     
     def CD_forward(self, x1, x2):
         b,c,h,w = x1.size()
@@ -266,8 +352,8 @@ class SCanNet(nn.Module):
     def forward(self, x1, x2):
         x_size = x1.size()
         
-        x1, x1_low = self.base_forward(x1)
-        x2, x2_low = self.base_forward(x2)
+        x1, x1_low = self.FCN.base_forward(x1)
+        x2, x2_low = self.FCN.base_forward(x2)
         x1, x2, xc = self.CD_forward(x1, x2)
 
         x1 = self.Dec1(x1, x1_low)
