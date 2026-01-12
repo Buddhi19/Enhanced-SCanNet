@@ -107,12 +107,17 @@ The proposed model produces sharper boundaries, fewer false positives, and impro
 If you find this work useful, please cite:
 
 ```bibtex
-@article{ratnayake2025enhancedscannet,
-  title={Enhanced SCanNet with CBAM and Dice Loss for Semantic Change Detection},
-  author={Ratnayake, R.M.A.M.B. and Wijenayake, W.M.B.S.K. and others},
-  journal={arXiv preprint arXiv:2505.04199},
-  year={2025}
-}
+@INPROCEEDINGS{11217111,
+  author={Ratnayake, R.M.A.M.B. and Wijenayake, W.M.B.S.K. and Sumanasekara, D.M.U.P. and Godaliyadda, G.M.R.I. and Herath, H.M.V.R. and Ekanayake, M.P.B.},
+  booktitle={2025 Moratuwa Engineering Research Conference (MERCon)}, 
+  title={Enhanced SCanNet with CBAM and Dice Loss for Semantic Change Detection}, 
+  year={2025},
+  volume={},
+  number={},
+  pages={84-89},
+  keywords={Training;Accuracy;Attention mechanisms;Sensitivity;Semantics;Refining;Feature extraction;Transformers;Power capacitors;Remote sensing},
+  doi={10.1109/MERCon67903.2025.11217111}}
+
 ```
 
 ---
