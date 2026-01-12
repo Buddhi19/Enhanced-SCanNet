@@ -1,4 +1,5 @@
 # Enhanced SCanNet: CBAM and Dice Loss for Semantic Change Detection
+![GitHub repo size](https://img.shields.io/github/repo-size/Buddhi19/Enhanced-SCanNet) ![GitHub last commit](https://img.shields.io/github/last-commit/Buddhi19/Enhanced-SCanNet) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 This repository contains the PyTorch implementation of **Enhanced SCanNet**, a semantic change detection (SCD) framework for multi‑temporal remote sensing images. The method improves the original **SCanNet** by integrating **CBAM-based attention** into the decoder and incorporating **Dice Loss** to better handle class imbalance.
 
