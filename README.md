@@ -4,9 +4,9 @@ This repository contains the PyTorch implementation of **Enhanced SCanNet**, a s
 
 This work is based on the paper:
 
-> **Enhanced SCanNet with CBAM and Dice Loss for Semantic Change Detection**
-> R.M.A.M.B. Ratnayake *et al.*, University of Peradeniya
-> DOI [https://doi.org/10.1109/MERCon67903.2025.11217111](https://doi.org/10.1109/MERCon67903.2025.11217111)
+> **Enhanced SCanNet with CBAM and Dice Loss for Semantic Change Detection**  
+> R.M.A.M.B. Ratnayake *et al.*, University of Peradeniya  
+> DOI: [https://doi.org/10.1109/MERCon67903.2025.11217111](https://doi.org/10.1109/MERCon67903.2025.11217111)
 ---
 
 ## 🔍 Overview
@@ -34,14 +34,12 @@ The proposed enhancements lead to consistent improvements on the **SECOND datase
 ## 🖼️ Architecture
 
 ### Overall Architecture
-```markdown
 ![Enhanced SCanNet Architecture](assets/architecture.png)
-```
+
 
 ### CBAM‑Enhanced Decoder Block
-```markdown
 ![CBAM Decoder Block](assets/cbam_decoder.png)
-```
+
 
 ---
 
@@ -105,9 +103,7 @@ Dataset split:
 ---
 
 ## 🖼️ Qualitative Results
-```markdown
 ![Qualitative Results – Example 1](assets/results.png)
-```
 
 The proposed model produces sharper boundaries, fewer false positives, and improved recovery of small change regions compared to the baseline.
 
@@ -138,7 +134,7 @@ If you find this work useful, please cite:
 
 ## 📬 Contact
 
-**R.M.A.M.B. Ratnayake**
-Multidisciplinary AI Research Center
-University of Peradeniya
+**R.M.A.M.B. Ratnayake**  
+Multidisciplinary AI Research Center  
+University of Peradeniya  
 📧 [athulya@eng.pdn.ac.lk](mailto:athulya@eng.pdn.ac.lk)
