@@ -45,14 +45,6 @@ The proposed enhancements lead to consistent improvements on the **SECOND datase
 ---
 
 ## 🔗 Pretrained Models
-
-### Enhanced SCanNet (SECOND Dataset)
-
-> *Links will be added once released*
-
-* **Enhanced SCanNet (SECOND) – Google Drive:** *TBA*
-* **Enhanced SCanNet (SECOND) – Hugging Face (optional):** *TBA*
-
 ### Baseline SCanNet (for comparison)
 
 The original SCanNet pretrained models provided by the authors can be used for baseline evaluation:
@@ -135,7 +127,7 @@ If you find this work useful, please cite:
 
 ## 📬 Contact
 
-**R.M.A.M.B. Ratnayake**  
+**R.M.A.M.B. Ratnayake (Athulya)**  
 Multidisciplinary AI Research Center  
 University of Peradeniya  
 📧 [athulya@eng.pdn.ac.lk](mailto:athulya@eng.pdn.ac.lk)
