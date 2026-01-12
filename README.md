@@ -124,10 +124,3 @@ If you find this work useful, please cite:
 * **SECOND dataset** by Shi *et al.*
 
 ---
-
-## 📬 Contact
-
-**R.M.A.M.B. Ratnayake (Athulya)**  
-Multidisciplinary AI Research Center  
-University of Peradeniya  
-📧 [athulya@eng.pdn.ac.lk](mailto:athulya@eng.pdn.ac.lk)
