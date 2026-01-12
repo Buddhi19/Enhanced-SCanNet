@@ -105,9 +105,6 @@ Dataset split:
 ---
 
 ## 🖼️ Qualitative Results
-
-> *Replace the placeholders below with qualitative result figures*
-
 ```markdown
 ![Qualitative Results – Example 1](assets/results.png)
 ```
